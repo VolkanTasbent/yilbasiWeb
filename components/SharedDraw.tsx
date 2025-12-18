@@ -36,40 +36,66 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
   ])
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Update online status
+  // Update online status using API
   useEffect(() => {
-    const updateOnlineStatus = () => {
-      const users = JSON.parse(localStorage.getItem(STORAGE_ONLINE_USERS) || '[]') as OnlineUser[]
-      const now = Date.now()
-      
-      // Remove users inactive for more than 5 seconds
-      const activeUsers = users.filter(u => now - u.lastSeen < 5000)
-      
-      // Add/update current user
-      const userIndex = activeUsers.findIndex(u => u.username === currentUser)
-      if (userIndex >= 0) {
-        activeUsers[userIndex].lastSeen = now
-      } else {
-        activeUsers.push({ username: currentUser, lastSeen: now })
+    let isMounted = true
+    let updateInterval: NodeJS.Timeout
+    let fetchInterval: NodeJS.Timeout
+
+    const updateOnlineStatus = async () => {
+      try {
+        // Send heartbeat to server
+        await fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: currentUser }),
+        })
+      } catch (error) {
+        console.error('Failed to update presence:', error)
       }
-      
-      localStorage.setItem(STORAGE_ONLINE_USERS, JSON.stringify(activeUsers))
-      setOnlineUsers(activeUsers)
     }
 
+    const fetchOnlineUsers = async () => {
+      try {
+        const response = await fetch('/api/presence')
+        if (response.ok && isMounted) {
+          const users = await response.json() as OnlineUser[]
+          setOnlineUsers(users)
+        }
+      } catch (error) {
+        console.error('Failed to fetch online users:', error)
+        // Fallback to localStorage if API fails
+        const users = JSON.parse(localStorage.getItem(STORAGE_ONLINE_USERS) || '[]') as OnlineUser[]
+        const now = Date.now()
+        const activeUsers = users.filter(u => now - u.lastSeen < 5000)
+        setOnlineUsers(activeUsers)
+      }
+    }
+
+    // Initial update and fetch
     updateOnlineStatus()
-    const interval = setInterval(updateOnlineStatus, 1000)
+    fetchOnlineUsers()
+
+    // Update presence every 2 seconds
+    updateInterval = setInterval(updateOnlineStatus, 2000)
+    
+    // Fetch online users every 1 second
+    fetchInterval = setInterval(fetchOnlineUsers, 1000)
 
     // Cleanup on unmount
     return () => {
-      clearInterval(interval)
-      const users = JSON.parse(localStorage.getItem(STORAGE_ONLINE_USERS) || '[]') as OnlineUser[]
-      const filtered = users.filter(u => u.username !== currentUser)
-      localStorage.setItem(STORAGE_ONLINE_USERS, JSON.stringify(filtered))
+      isMounted = false
+      clearInterval(updateInterval)
+      clearInterval(fetchInterval)
+      
+      // Remove user from server
+      fetch('/api/presence?username=' + encodeURIComponent(currentUser), {
+        method: 'DELETE',
+      }).catch(console.error)
     }
   }, [currentUser])
 
-  // Listen for storage changes and countdown
+  // Listen for storage changes and countdown (for draw state sync)
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === STORAGE_COUNTDOWN) {
@@ -89,7 +115,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
 
     window.addEventListener('storage', handleStorageChange)
 
-    // Poll for changes
+    // Poll for changes (for same-tab updates)
     const interval = setInterval(() => {
       const countdown = localStorage.getItem(STORAGE_COUNTDOWN)
       const results = localStorage.getItem(STORAGE_RESULTS)
@@ -115,7 +141,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         const parsedResults = JSON.parse(results)
         setDrawState(prev => ({ ...prev, results: parsedResults, isDrawComplete: true, isDrawActive: false }))
       }
-    }, 100)
+    }, 500) // Poll every 500ms for better sync
 
     return () => {
       window.removeEventListener('storage', handleStorageChange)
@@ -169,6 +195,14 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
       const count = parseInt(savedCountdown)
       setDrawState(prev => ({ ...prev, countdown: count }))
     }
+    
+    // Fetch initial online users from API
+    fetch('/api/presence')
+      .then(res => res.json())
+      .then((users: OnlineUser[]) => setOnlineUsers(users))
+      .catch(() => {
+        // Fallback: do nothing, will be handled by updateOnlineStatus
+      })
   }, [])
 
   const handleNameChange = (id: number, newName: string) => {
