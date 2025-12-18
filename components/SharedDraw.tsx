@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const STORAGE_KEY = 'yilbasi-draw-state'
@@ -38,39 +38,42 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
   ])
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Update online status using API
+  // Optimized online status updates
   useEffect(() => {
     let isMounted = true
     let updateInterval: NodeJS.Timeout
     let fetchInterval: NodeJS.Timeout
+    let lastUsersHash = ''
 
     const updateOnlineStatus = async () => {
+      if (!isMounted) return
       try {
-        // Send heartbeat to server
         await fetch('/api/presence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: currentUser }),
         })
       } catch (error) {
-        console.error('Failed to update presence:', error)
+        // Silent error
       }
     }
 
     const fetchOnlineUsers = async () => {
+      if (!isMounted) return
       try {
-        const response = await fetch('/api/presence')
-        if (response.ok && isMounted) {
+        const response = await fetch('/api/presence', { cache: 'no-store' })
+        if (response.ok) {
           const users = await response.json() as OnlineUser[]
-          setOnlineUsers(users)
+          const usersHash = JSON.stringify(users.map(u => u.username).sort())
+          
+          // Only update if users changed
+          if (usersHash !== lastUsersHash) {
+            lastUsersHash = usersHash
+            setOnlineUsers(users)
+          }
         }
       } catch (error) {
-        console.error('Failed to fetch online users:', error)
-        // Fallback to localStorage if API fails
-        const users = JSON.parse(localStorage.getItem(STORAGE_ONLINE_USERS) || '[]') as OnlineUser[]
-        const now = Date.now()
-        const activeUsers = users.filter(u => now - u.lastSeen < 5000)
-        setOnlineUsers(activeUsers)
+        // Silent error
       }
     }
 
@@ -78,11 +81,9 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
     updateOnlineStatus()
     fetchOnlineUsers()
 
-    // Update presence every 2 seconds
-    updateInterval = setInterval(updateOnlineStatus, 2000)
-    
-    // Fetch online users every 1 second
-    fetchInterval = setInterval(fetchOnlineUsers, 1000)
+    // Optimized intervals
+    updateInterval = setInterval(updateOnlineStatus, 3000) // Every 3 seconds
+    fetchInterval = setInterval(fetchOnlineUsers, 2000) // Every 2 seconds
 
     // Cleanup on unmount
     return () => {
@@ -93,7 +94,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
       // Remove user from server
       fetch('/api/presence?username=' + encodeURIComponent(currentUser), {
         method: 'DELETE',
-      }).catch(console.error)
+      }).catch(() => {})
     }
   }, [currentUser])
 
@@ -209,11 +210,8 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         clearInterval(localCountdownInterval)
       }
       window.removeEventListener('storage', handleStorageChange)
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-      }
     }
-  }, [participants])
+  }, []) // Only run once on mount - polling handles updates
 
   // Countdown is now handled by server polling (removed local countdown logic)
   // Server calculates countdown based on target time, clients poll every 500ms
@@ -262,24 +260,30 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
       })
   }, [])
 
-  const handleNameChange = (id: number, newName: string) => {
-    const updated = participants.map(p => p.id === id ? { ...p, name: newName } : p)
-    setParticipants(updated)
-    
-    // Update on server (for persistence across refreshes)
-    if (isAdmin) {
-      fetch('/api/draw/state', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'updateParticipants',
-          participants: updated,
-        }),
-      }).catch(console.error)
-    }
-  }
+  const handleNameChange = useCallback((id: number, newName: string) => {
+    setParticipants(prev => {
+      const updated = prev.map(p => p.id === id ? { ...p, name: newName } : p)
+      
+      // Debounced server update (only if admin)
+      if (isAdmin) {
+        // Use timeout to debounce
+        setTimeout(() => {
+          fetch('/api/draw/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'updateParticipants',
+              participants: updated,
+            }),
+          }).catch(() => {})
+        }, 500)
+      }
+      
+      return updated
+    })
+  }, [isAdmin])
 
-  const performDraw = async () => {
+  const performDraw = useCallback(async () => {
     if (!isAdmin) return
 
     try {
@@ -295,16 +299,14 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         return
       }
 
-      const { state: serverState } = await startResponse.json()
-      setDrawState({
+      // Optimistic update
+      setDrawState(prev => ({
+        ...prev,
         isDrawActive: true,
         isDrawComplete: false,
         countdown: 10,
         results: null,
-      })
-
-      // Also update localStorage for fallback
-      localStorage.setItem(STORAGE_COUNTDOWN, '10')
+      }))
 
       // Perform draw after 10 seconds
       setTimeout(async () => {
@@ -335,37 +337,48 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         }))
 
         // Save results to server
-        const completeResponse = await fetch('/api/draw/state', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'complete',
-            results,
-          }),
-        })
-
-        if (completeResponse.ok) {
-          const { state: newState } = await completeResponse.json()
-          setDrawState({
-            ...newState,
+        try {
+          await fetch('/api/draw/state', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'complete',
+              results,
+            }),
           })
-          
-          // Also update localStorage for fallback
-          localStorage.setItem(STORAGE_RESULTS, JSON.stringify(results))
-          localStorage.setItem(STORAGE_COUNTDOWN, '0')
+
+          // Optimistic update
+          setDrawState(prev => ({
+            ...prev,
+            results,
+            isDrawComplete: true,
+            isDrawActive: false,
+            countdown: 0,
+          }))
+        } catch (error) {
+          console.error('Complete draw error:', error)
         }
       }, 10000)
     } catch (error) {
       console.error('Draw error:', error)
       alert('Çekiliş başlatılırken hata oluştu.')
     }
-  }
+  }, [isAdmin, participants])
 
-  const resetDraw = async () => {
+  const resetDraw = useCallback(async () => {
     if (!isAdmin) return
 
+    // Optimistic update
+    setDrawState({
+      isDrawActive: false,
+      isDrawComplete: false,
+      countdown: null,
+      results: null,
+      countdownStartTime: null,
+    })
+
     try {
-      const response = await fetch('/api/draw/state', {
+      await fetch('/api/draw/state', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -373,29 +386,10 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
           participants,
         }),
       })
-
-      if (response.ok) {
-        const { state: newState } = await response.json()
-        setDrawState({
-          isDrawActive: false,
-          isDrawComplete: false,
-          countdown: null,
-          results: null,
-        })
-        
-        // Also clear localStorage
-        localStorage.removeItem(STORAGE_RESULTS)
-        localStorage.removeItem(STORAGE_COUNTDOWN)
-        localStorage.setItem(STORAGE_KEY, JSON.stringify({
-          isDrawActive: false,
-          isDrawComplete: false,
-          results: null,
-        }))
-      }
     } catch (error) {
       console.error('Reset error:', error)
     }
-  }
+  }, [isAdmin, participants])
 
   return (
     <div className="max-w-5xl mx-auto">
