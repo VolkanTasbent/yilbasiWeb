@@ -13,6 +13,7 @@ interface DrawState {
   isDrawComplete: boolean
   countdown: number | null
   results: Array<{ giver: string; receiver: string }> | null
+  countdownStartTime?: number | null
 }
 
 interface OnlineUser {
@@ -26,6 +27,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
     isDrawComplete: false,
     countdown: null,
     results: null,
+    countdownStartTime: null,
   })
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
   const [participants, setParticipants] = useState([
@@ -95,8 +97,96 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
     }
   }, [currentUser])
 
-  // Listen for storage changes and countdown (for draw state sync)
+  // Poll server for draw state changes (real-time sync across all devices)
   useEffect(() => {
+    let isMounted = true
+    let localCountdownInterval: NodeJS.Timeout | null = null
+
+    const fetchDrawState = async () => {
+      try {
+        const response = await fetch('/api/draw/state', {
+          cache: 'no-store',
+        })
+        
+        if (response.ok && isMounted) {
+          const serverState = await response.json()
+          
+          // Calculate countdown locally if we have start time (for smoother updates)
+          let calculatedCountdown = serverState.countdown
+          if (serverState.countdownStartTime && serverState.isDrawActive && !serverState.isDrawComplete) {
+            const now = Date.now()
+            const elapsed = Math.floor((now - serverState.countdownStartTime) / 1000)
+            calculatedCountdown = Math.max(0, 10 - elapsed)
+          }
+          
+          // Update state from server
+          setDrawState(prev => {
+            // Only update if there's a meaningful change to avoid unnecessary re-renders
+            if (
+              prev.countdown !== calculatedCountdown ||
+              prev.isDrawComplete !== serverState.isDrawComplete ||
+              prev.isDrawActive !== serverState.isDrawActive ||
+              (prev.results === null && serverState.results !== null) ||
+              (prev.results !== null && JSON.stringify(prev.results) !== JSON.stringify(serverState.results)) ||
+              prev.countdownStartTime !== serverState.countdownStartTime
+            ) {
+              return {
+                isDrawActive: serverState.isDrawActive,
+                isDrawComplete: serverState.isDrawComplete,
+                countdown: calculatedCountdown,
+                results: serverState.results,
+                countdownStartTime: serverState.countdownStartTime,
+              }
+            }
+            return prev
+          })
+
+          // Update participants if they changed
+          if (serverState.participants && JSON.stringify(serverState.participants) !== JSON.stringify(participants)) {
+            setParticipants(serverState.participants)
+          }
+
+          // Update countdown locally for smoother animation
+          if (serverState.countdownStartTime && serverState.isDrawActive && !serverState.isDrawComplete) {
+            if (localCountdownInterval) {
+              clearInterval(localCountdownInterval)
+            }
+            localCountdownInterval = setInterval(() => {
+              const now = Date.now()
+              const elapsed = Math.floor((now - serverState.countdownStartTime) / 1000)
+              const remaining = Math.max(0, 10 - elapsed)
+              setDrawState(prev => ({ ...prev, countdown: remaining }))
+            }, 100) // Update every 100ms for smooth countdown
+          } else {
+            if (localCountdownInterval) {
+              clearInterval(localCountdownInterval)
+              localCountdownInterval = null
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch draw state:', error)
+        // Fallback to localStorage on error
+        const countdown = localStorage.getItem(STORAGE_COUNTDOWN)
+        const results = localStorage.getItem(STORAGE_RESULTS)
+        if (countdown) {
+          const count = parseInt(countdown)
+          setDrawState(prev => ({ ...prev, countdown: count }))
+        }
+        if (results) {
+          const parsedResults = JSON.parse(results)
+          setDrawState(prev => ({ ...prev, results: parsedResults, isDrawComplete: true }))
+        }
+      }
+    }
+
+    // Fetch immediately
+    fetchDrawState()
+
+    // Poll every 500ms for real-time updates
+    const interval = setInterval(fetchDrawState, 500)
+
+    // Also listen for storage events (fallback)
     const handleStorageChange = (e: StorageEvent) => {
       if (e.key === STORAGE_COUNTDOWN) {
         const countdown = e.newValue ? parseInt(e.newValue) : null
@@ -106,95 +196,62 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         const results = e.newValue ? JSON.parse(e.newValue) : null
         if (results) {
           setDrawState(prev => ({ ...prev, results, isDrawComplete: true, isDrawActive: false, countdown: null }))
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-          }
         }
       }
     }
 
     window.addEventListener('storage', handleStorageChange)
 
-    // Poll for changes (for same-tab updates)
-    const interval = setInterval(() => {
-      const countdown = localStorage.getItem(STORAGE_COUNTDOWN)
-      const results = localStorage.getItem(STORAGE_RESULTS)
-      const state = localStorage.getItem(STORAGE_KEY)
-      
-      if (countdown) {
-        const count = parseInt(countdown)
-        setDrawState(prev => ({ ...prev, countdown: count }))
-        
-        if (count <= 0 && results) {
-          const parsedResults = JSON.parse(results)
-          setDrawState(prev => ({ 
-            ...prev, 
-            results: parsedResults, 
-            isDrawComplete: true, 
-            isDrawActive: false, 
-            countdown: null 
-          }))
-        }
-      }
-      
-      if (results && !drawState.results) {
-        const parsedResults = JSON.parse(results)
-        setDrawState(prev => ({ ...prev, results: parsedResults, isDrawComplete: true, isDrawActive: false }))
-      }
-    }, 500) // Poll every 500ms for better sync
-
     return () => {
-      window.removeEventListener('storage', handleStorageChange)
+      isMounted = false
       clearInterval(interval)
+      if (localCountdownInterval) {
+        clearInterval(localCountdownInterval)
+      }
+      window.removeEventListener('storage', handleStorageChange)
       if (countdownIntervalRef.current) {
         clearInterval(countdownIntervalRef.current)
       }
     }
-  }, [drawState.results])
+  }, [participants])
 
-  // Countdown logic
+  // Countdown is now handled by server polling (removed local countdown logic)
+  // Server calculates countdown based on target time, clients poll every 500ms
+
+  // Load initial state from server
   useEffect(() => {
-    if (drawState.countdown !== null && drawState.countdown > 0) {
-      countdownIntervalRef.current = setInterval(() => {
-        const currentCountdown = parseInt(localStorage.getItem(STORAGE_COUNTDOWN) || '0')
-        if (currentCountdown > 0) {
-          const newCount = currentCountdown - 1
-          localStorage.setItem(STORAGE_COUNTDOWN, newCount.toString())
-          setDrawState(prev => ({ ...prev, countdown: newCount }))
-        } else {
-          if (countdownIntervalRef.current) {
-            clearInterval(countdownIntervalRef.current)
-          }
+    // Fetch initial draw state from API
+    fetch('/api/draw/state', { cache: 'no-store' })
+      .then(res => res.json())
+      .then((serverState) => {
+        setDrawState({
+          isDrawActive: serverState.isDrawActive || false,
+          isDrawComplete: serverState.isDrawComplete || false,
+          countdown: serverState.countdown,
+          results: serverState.results,
+        })
+        if (serverState.participants) {
+          setParticipants(serverState.participants)
         }
-      }, 1000)
-    }
-
-    return () => {
-      if (countdownIntervalRef.current) {
-        clearInterval(countdownIntervalRef.current)
-      }
-    }
-  }, [drawState.countdown])
-
-  // Load initial state
-  useEffect(() => {
-    const savedState = localStorage.getItem(STORAGE_KEY)
-    const savedResults = localStorage.getItem(STORAGE_RESULTS)
-    const savedCountdown = localStorage.getItem(STORAGE_COUNTDOWN)
-    
-    if (savedState) {
-      setDrawState(JSON.parse(savedState))
-    }
-    
-    if (savedResults) {
-      const results = JSON.parse(savedResults)
-      setDrawState(prev => ({ ...prev, results, isDrawComplete: true }))
-    }
-    
-    if (savedCountdown) {
-      const count = parseInt(savedCountdown)
-      setDrawState(prev => ({ ...prev, countdown: count }))
-    }
+      })
+      .catch(() => {
+        // Fallback to localStorage on error
+        const savedState = localStorage.getItem(STORAGE_KEY)
+        const savedResults = localStorage.getItem(STORAGE_RESULTS)
+        const savedCountdown = localStorage.getItem(STORAGE_COUNTDOWN)
+        
+        if (savedState) {
+          setDrawState(JSON.parse(savedState))
+        }
+        if (savedResults) {
+          const results = JSON.parse(savedResults)
+          setDrawState(prev => ({ ...prev, results, isDrawComplete: true }))
+        }
+        if (savedCountdown) {
+          const count = parseInt(savedCountdown)
+          setDrawState(prev => ({ ...prev, countdown: count }))
+        }
+      })
     
     // Fetch initial online users from API
     fetch('/api/presence')
@@ -208,71 +265,136 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
   const handleNameChange = (id: number, newName: string) => {
     const updated = participants.map(p => p.id === id ? { ...p, name: newName } : p)
     setParticipants(updated)
+    
+    // Update on server (for persistence across refreshes)
+    if (isAdmin) {
+      fetch('/api/draw/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'updateParticipants',
+          participants: updated,
+        }),
+      }).catch(console.error)
+    }
   }
 
-  const performDraw = () => {
+  const performDraw = async () => {
     if (!isAdmin) return
 
-    // Start countdown
-    localStorage.setItem(STORAGE_COUNTDOWN, '10')
-    setDrawState(prev => ({ ...prev, isDrawActive: true, isDrawComplete: false, countdown: 10 }))
+    try {
+      // Start countdown on server
+      const startResponse = await fetch('/api/draw/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'start' }),
+      })
 
-    // Perform draw after 10 seconds
-    setTimeout(() => {
-      const names = participants.map(p => p.name)
-      let receivers = [...names]
-      
-      // Fisher-Yates shuffle
-      let valid = false
-      let attempts = 0
-      
-      while (!valid && attempts < 1000) {
-        for (let i = receivers.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [receivers[i], receivers[j]] = [receivers[j], receivers[i]]
+      if (!startResponse.ok) {
+        alert('Çekiliş başlatılırken hata oluştu.')
+        return
+      }
+
+      const { state: serverState } = await startResponse.json()
+      setDrawState({
+        isDrawActive: true,
+        isDrawComplete: false,
+        countdown: 10,
+        results: null,
+      })
+
+      // Also update localStorage for fallback
+      localStorage.setItem(STORAGE_COUNTDOWN, '10')
+
+      // Perform draw after 10 seconds
+      setTimeout(async () => {
+        const names = participants.map(p => p.name)
+        let receivers = [...names]
+        
+        // Fisher-Yates shuffle
+        let valid = false
+        let attempts = 0
+        
+        while (!valid && attempts < 1000) {
+          for (let i = receivers.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [receivers[i], receivers[j]] = [receivers[j], receivers[i]]
+          }
+          valid = names.every((giver, idx) => giver !== receivers[idx])
+          attempts++
         }
-        valid = names.every((giver, idx) => giver !== receivers[idx])
-        attempts++
-      }
-      
-      if (!valid) {
-        receivers = [...names]
-        receivers.push(receivers.shift()!)
-      }
+        
+        if (!valid) {
+          receivers = [...names]
+          receivers.push(receivers.shift()!)
+        }
 
-      const results = names.map((giver, index) => ({
-        giver,
-        receiver: receivers[index],
-      }))
+        const results = names.map((giver, index) => ({
+          giver,
+          receiver: receivers[index],
+        }))
 
-      // Save results
-      localStorage.setItem(STORAGE_RESULTS, JSON.stringify(results))
-      localStorage.setItem(STORAGE_COUNTDOWN, '0')
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        isDrawActive: false,
-        isDrawComplete: true,
-        results,
-      }))
-      
-      setDrawState(prev => ({ ...prev, results, isDrawComplete: true, isDrawActive: false, countdown: 0 }))
-    }, 10000)
+        // Save results to server
+        const completeResponse = await fetch('/api/draw/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'complete',
+            results,
+          }),
+        })
+
+        if (completeResponse.ok) {
+          const { state: newState } = await completeResponse.json()
+          setDrawState({
+            ...newState,
+          })
+          
+          // Also update localStorage for fallback
+          localStorage.setItem(STORAGE_RESULTS, JSON.stringify(results))
+          localStorage.setItem(STORAGE_COUNTDOWN, '0')
+        }
+      }, 10000)
+    } catch (error) {
+      console.error('Draw error:', error)
+      alert('Çekiliş başlatılırken hata oluştu.')
+    }
   }
 
-  const resetDraw = () => {
+  const resetDraw = async () => {
     if (!isAdmin) return
-    localStorage.removeItem(STORAGE_RESULTS)
-    localStorage.removeItem(STORAGE_COUNTDOWN)
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      isDrawActive: false,
-      isDrawComplete: false,
-      results: null,
-    }))
-    setDrawState({
-      isDrawActive: false,
-      isDrawComplete: false,
-      countdown: null,
-      results: null,
-    })
+
+    try {
+      const response = await fetch('/api/draw/state', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reset',
+          participants,
+        }),
+      })
+
+      if (response.ok) {
+        const { state: newState } = await response.json()
+        setDrawState({
+          isDrawActive: false,
+          isDrawComplete: false,
+          countdown: null,
+          results: null,
+        })
+        
+        // Also clear localStorage
+        localStorage.removeItem(STORAGE_RESULTS)
+        localStorage.removeItem(STORAGE_COUNTDOWN)
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          isDrawActive: false,
+          isDrawComplete: false,
+          results: null,
+        }))
+      }
+    } catch (error) {
+      console.error('Reset error:', error)
+    }
   }
 
   return (
