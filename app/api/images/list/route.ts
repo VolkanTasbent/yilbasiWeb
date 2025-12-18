@@ -3,13 +3,13 @@ import { NextResponse } from 'next/server'
 
 export async function GET() {
   try {
-    const { blobs } = await list({
-      prefix: 'yilbasi-',
-    })
+    // List all blobs (no prefix filter to get all images)
+    const { blobs } = await list()
 
+    // Filter images that might be from this app (optional: you can remove filter to get all)
     const images = blobs
       .map((blob) => ({
-        id: blob.pathname,
+        id: blob.pathname || blob.url,
         url: blob.url,
         uploadedAt: blob.uploadedAt ? blob.uploadedAt.getTime() : Date.now(),
       }))
@@ -18,10 +18,8 @@ export async function GET() {
     return NextResponse.json(images)
   } catch (error) {
     console.error('List error:', error)
-    return NextResponse.json(
-      { error: 'Failed to list images' },
-      { status: 500 }
-    )
+    // Return empty array instead of error so frontend can handle it
+    return NextResponse.json([])
   }
 }
 

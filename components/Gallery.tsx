@@ -21,21 +21,26 @@ export default function Gallery({ isAdmin = false }: GalleryProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [useVercelBlob, setUseVercelBlob] = useState(false)
 
-  // Check if Vercel Blob is available
+  // Check if Vercel Blob is available and load images
   useEffect(() => {
     const checkVercelBlob = async () => {
       try {
         const response = await fetch('/api/images/list')
-        if (response.ok) {
+        const data = await response.json()
+        
+        if (response.ok && Array.isArray(data)) {
           setUseVercelBlob(true)
-          const data = await response.json()
+          console.log('Vercel Blob\'dan yüklenen fotoğraf sayısı:', data.length)
           setImages(data)
           setIsLoading(false)
           return
+        } else {
+          console.log('API response hatası:', data)
         }
       } catch (error) {
-        console.log('Vercel Blob not available, using LocalStorage')
+        console.log('Vercel Blob API hatası, LocalStorage kontrol ediliyor...', error)
       }
+      
       // Fallback to LocalStorage
       setUseVercelBlob(false)
       try {
@@ -43,9 +48,12 @@ export default function Gallery({ isAdmin = false }: GalleryProps) {
         if (saved) {
           const parsed = JSON.parse(saved)
           setImages(Array.isArray(parsed) ? parsed : [])
+        } else {
+          setImages([])
         }
       } catch (error) {
         console.error('Fotoğraflar yüklenirken hata:', error)
+        setImages([])
       } finally {
         setIsLoading(false)
       }
@@ -194,13 +202,17 @@ export default function Gallery({ isAdmin = false }: GalleryProps) {
             {useVercelBlob ? (
               <>
                 ✅ <strong>Vercel Blob Storage</strong> kullanılıyor (kalıcı, tüm cihazlardan erişilebilir)
+                <br />
+                <span className="text-xs text-white/60">
+                  {images.length > 0 ? `${images.length} fotoğraf bulundu` : 'Fotoğraflar yükleniyor...'}
+                </span>
               </>
             ) : (
               <>
                 💾 <strong>LocalStorage</strong> kullanılıyor (sadece bu tarayıcıda, ~5-10MB limit)
                 <br />
                 <span className="text-xs text-white/60">
-                  Kalıcı saklama için Vercel'e deploy edin (VERCEL-DEPLOY.md dosyasına bakın)
+                  Vercel Blob Storage kullanılamıyor, LocalStorage'a geçildi
                 </span>
               </>
             )}
