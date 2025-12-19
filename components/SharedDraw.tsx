@@ -21,6 +21,14 @@ interface OnlineUser {
   lastSeen: number
 }
 
+// Login kullanıcı adları -> Çekiliş isimleri eşleştirmesi
+const USERNAME_TO_DRAW_NAME: Record<string, string> = {
+  'rana28': 'raniş',
+  'naile29': 'kozalak',
+  'merve30': 'pişkinasker',
+  'volkan31': 'volkanbabapro',
+}
+
 export default function SharedDraw({ currentUser, isAdmin }: { currentUser: string; isAdmin: boolean }) {
   const [drawState, setDrawState] = useState<DrawState>({
     isDrawActive: false,
@@ -37,6 +45,9 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
     { id: 4, name: 'raniş' },
   ])
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
+  
+  // Login kullanıcı adını çekiliş ismine çevir
+  const drawName = USERNAME_TO_DRAW_NAME[currentUser] || currentUser
 
   // Optimized online status updates
   useEffect(() => {
@@ -458,8 +469,8 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
       {/* Results - Herkes sadece kime hediye vereceğini görür */}
       <AnimatePresence>
         {drawState.isDrawComplete && drawState.results && (() => {
-          // Mevcut kullanıcının vereceği hediyeyi bul
-          const userResult = drawState.results.find(r => r.giver === currentUser)
+          // Mevcut kullanıcının vereceği hediyeyi bul (login adını çekiliş ismine çevir)
+          const userResult = drawState.results.find(r => r.giver === drawName)
           
           if (!userResult) {
             return (
@@ -496,8 +507,8 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
               >
                 <div className="space-y-6">
                   <div className="text-white/80 text-xl mb-4">
-                    <p className="text-3xl font-bold text-white mb-2">{currentUser}</p>
-                    <p className="text-lg">olarak siz</p>
+                    <p className="text-3xl font-bold text-white mb-2">{drawName}</p>
+                    <p className="text-lg">({currentUser})</p>
                   </div>
                   
                   <div className="text-6xl mb-6">🎁</div>
