@@ -15,10 +15,10 @@ let drawState: DrawState = {
   countdown: null,
   results: null,
   participants: [
-    { id: 1, name: 'Kişi 1' },
-    { id: 2, name: 'Kişi 2' },
-    { id: 3, name: 'Kişi 3' },
-    { id: 4, name: 'Kişi 4' },
+    { id: 1, name: 'kozalak' },
+    { id: 2, name: 'volkanbabapro' },
+    { id: 3, name: 'pişkinasker' },
+    { id: 4, name: 'raniş' },
   ],
 }
 

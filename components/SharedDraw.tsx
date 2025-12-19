@@ -30,11 +30,11 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
     countdownStartTime: null,
   })
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([])
-  const [participants, setParticipants] = useState([
-    { id: 1, name: 'Kişi 1' },
-    { id: 2, name: 'Kişi 2' },
-    { id: 3, name: 'Kişi 3' },
-    { id: 4, name: 'Kişi 4' },
+  const [participants] = useState([
+    { id: 1, name: 'kozalak' },
+    { id: 2, name: 'volkanbabapro' },
+    { id: 3, name: 'pişkinasker' },
+    { id: 4, name: 'raniş' },
   ])
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -142,10 +142,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
             return prev
           })
 
-          // Update participants if they changed
-          if (serverState.participants && JSON.stringify(serverState.participants) !== JSON.stringify(participants)) {
-            setParticipants(serverState.participants)
-          }
+          // Participants are fixed, no need to update
 
           // Update countdown locally for smoother animation
           if (serverState.countdownStartTime && serverState.isDrawActive && !serverState.isDrawComplete) {
@@ -228,9 +225,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
           countdown: serverState.countdown,
           results: serverState.results,
         })
-        if (serverState.participants) {
-          setParticipants(serverState.participants)
-        }
+        // Participants are fixed, no need to update from server
       })
       .catch(() => {
         // Fallback to localStorage on error
@@ -260,28 +255,7 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
       })
   }, [])
 
-  const handleNameChange = useCallback((id: number, newName: string) => {
-    setParticipants(prev => {
-      const updated = prev.map(p => p.id === id ? { ...p, name: newName } : p)
-      
-      // Debounced server update (only if admin)
-      if (isAdmin) {
-        // Use timeout to debounce
-        setTimeout(() => {
-          fetch('/api/draw/state', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'updateParticipants',
-              participants: updated,
-            }),
-          }).catch(() => {})
-        }, 500)
-      }
-      
-      return updated
-    })
-  }, [isAdmin])
+  // Name change is disabled - participants are fixed
 
   const performDraw = useCallback(async () => {
     if (!isAdmin) return
@@ -442,25 +416,20 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         </motion.div>
       )}
 
-      {/* Edit Names - Only visible if not drawn */}
+      {/* Participants Info - Only visible if not drawn */}
       {!drawState.isDrawComplete && drawState.countdown === null && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           className="mb-12 glass-strong rounded-3xl p-8 glow"
         >
-          <h3 className="text-2xl font-bold text-white mb-6 text-center">Katılımcı İsimleri</h3>
+          <h3 className="text-2xl font-bold text-white mb-6 text-center">Katılımcılar</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {participants.map((person) => (
-              <div key={person.id} className="flex items-center gap-4">
-                <input
-                  type="text"
-                  value={person.name}
-                  onChange={(e) => handleNameChange(person.id, e.target.value)}
-                  className="flex-1 px-4 py-3 glass rounded-xl text-white text-lg font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
-                  placeholder="İsim girin..."
-                  disabled={drawState.isDrawActive || drawState.countdown !== null}
-                />
+              <div key={person.id} className="flex items-center justify-center gap-4">
+                <div className="flex-1 px-4 py-3 glass rounded-xl text-white text-lg font-semibold text-center">
+                  {person.name}
+                </div>
               </div>
             ))}
           </div>
