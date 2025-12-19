@@ -53,3 +53,5 @@ vercel
 
 Her şey hazır! Sadece `npm install` ve `npm run dev` ile başlayabilirsiniz! 🎁
 
+
+

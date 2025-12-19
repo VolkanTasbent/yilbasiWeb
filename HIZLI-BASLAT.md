@@ -58,3 +58,5 @@ Eğer "Operation not permitted" hatası alıyorsanız:
 - **En kolay çözüm: Vercel'e deploy edin** (yukarıdaki Seçenek 1 veya 2)
 - Vercel'de bu sorun olmaz çünkü cloud'da çalışır
 
+
+

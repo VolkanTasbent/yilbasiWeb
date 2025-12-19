@@ -486,64 +486,89 @@ export default function SharedDraw({ currentUser, isAdmin }: { currentUser: stri
         </motion.div>
       )}
 
-      {/* Results */}
+      {/* Results - Herkes sadece kime hediye vereceğini görür */}
       <AnimatePresence>
-        {drawState.isDrawComplete && drawState.results && (
-          <motion.div
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-6"
-          >
-            <motion.h3
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className="text-4xl font-black text-center text-white mb-8 text-gradient"
-            >
-              🎉 Çekiliş Sonuçları 🎉
-            </motion.h3>
-
-            {drawState.results.map((result, index) => (
+        {drawState.isDrawComplete && drawState.results && (() => {
+          // Mevcut kullanıcının vereceği hediyeyi bul
+          const userResult = drawState.results.find(r => r.giver === currentUser)
+          
+          if (!userResult) {
+            return (
               <motion.div
-                key={index}
-                initial={{ opacity: 0, x: -50 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: 0.3 + index * 0.1 }}
-                className="glass rounded-xl p-6 glow-hover"
+                initial={{ opacity: 0, y: 50 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="text-center"
               >
-                <div className="flex items-center justify-between text-white">
-                  <div className="flex-1">
-                    <p className="text-2xl font-bold mb-1">{result.giver}</p>
-                    <p className="text-sm opacity-70">hediye verecek</p>
+                <p className="text-2xl text-white/70">Sonuç bulunamadı</p>
+              </motion.div>
+            )
+          }
+
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-6"
+            >
+              <motion.h3
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className="text-4xl font-black text-center text-white mb-8 text-gradient"
+              >
+                🎉 Çekiliş Sonucu 🎉
+              </motion.h3>
+
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: 0.3 }}
+                className="glass-strong rounded-3xl p-12 glow border-2 border-purple-500/30 text-center"
+              >
+                <div className="space-y-6">
+                  <div className="text-white/80 text-xl mb-4">
+                    <p className="text-3xl font-bold text-white mb-2">{currentUser}</p>
+                    <p className="text-lg">olarak siz</p>
                   </div>
-                  <div className="mx-8 text-3xl opacity-50">→</div>
-                  <div className="flex-1 text-right">
-                    <p className="text-2xl font-bold mb-1">{result.receiver}</p>
-                    <p className="text-sm opacity-70">hediye alacak</p>
+                  
+                  <div className="text-6xl mb-6">🎁</div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-white/60 text-lg">Hediyenizi vereceksiniz</p>
+                    <p className="text-4xl md:text-5xl font-black text-gradient">
+                      {userResult.receiver}
+                    </p>
+                    <p className="text-white/60 text-lg mt-2">kişisine</p>
+                  </div>
+                  
+                  <div className="mt-8 pt-8 border-t border-white/10">
+                    <p className="text-white/50 text-sm">
+                      💡 Not: Kime hediye vereceğinizi biliyorsunuz, ancak kimden hediye alacağınız gizli kalıyor!
+                    </p>
                   </div>
                 </div>
               </motion.div>
-            ))}
 
-            {isAdmin && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.7 }}
-                className="text-center mt-8"
-              >
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={resetDraw}
-                  className="px-8 py-4 glass-strong text-white rounded-xl hover:bg-white/20 transition-all font-semibold"
+              {isAdmin && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.7 }}
+                  className="text-center mt-8"
                 >
-                  🔄 Yeni Çekiliş Yap
-                </motion.button>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={resetDraw}
+                    className="px-8 py-4 glass-strong text-white rounded-xl hover:bg-white/20 transition-all font-semibold"
+                  >
+                    🔄 Yeni Çekiliş Yap
+                  </motion.button>
+                </motion.div>
+              )}
+            </motion.div>
+          )
+        })()}
       </AnimatePresence>
 
       {/* Current User Info */}

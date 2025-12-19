@@ -65,3 +65,5 @@ Fotoğraflar artık Vercel Blob Storage'da kalıcı olarak saklanıyor:
 - Ücretli planlarda daha fazla alan var
 - Fotoğraflar silinene kadar kalıcıdır
 
+
+

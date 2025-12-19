@@ -16,3 +16,5 @@ vercel --prod
 echo ""
 echo "✅ Deploy tamamlandı! Site linki yukarıda görünecek."
 
+
+

@@ -62,3 +62,5 @@ Vercel'de bu sorun olmaz çünkü cloud'da çalışır:
 
 Vercel'de "Operation not permitted" hatası olmaz çünkü cloud ortamında çalışır.
 
+
+

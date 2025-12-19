@@ -46,3 +46,5 @@ Eğer fotoğrafların **tüm cihazlardan erişilebilir** olmasını istiyorsanı
 
 Fotoğraflar otomatik olarak kaydedilir ve sayfa yenilendiğinde korunur! 🎉
 
+
+

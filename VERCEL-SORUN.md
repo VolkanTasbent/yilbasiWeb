@@ -54,3 +54,5 @@ Eğer hala sorun varsa:
 - API route'ları çalışıyor mu kontrol edin
 - Console'da hata var mı bakın (F12)
 
+
+
